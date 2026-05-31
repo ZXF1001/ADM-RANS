@@ -1,0 +1,74 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2512                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    location    "constant";
+    object      turbineArrayProperties;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+globalProperties
+{
+    outputControl       timeStep;
+    outputInterval      10;
+}
+
+turbine0
+{
+    turbineType             NREL5MW_Simple;
+
+    // Tower base location (x y z) [m]
+    baseLocation            (200 0 0);
+
+    // Actuator disk discretization
+    nRadial                 40;
+    azimuthMaxDis           10.0;
+    pointDistType           uniform;
+    pointInterpType         linear;
+
+    // Gaussian projection kernel width [m]
+    // Rule of thumb: 2-3 times the local grid cell size
+    epsilon                 15.0;
+
+    // Fixed nacelle yaw angle (compass degrees: 0=N, 90=E, 180=S, 270=W)
+    // 270 = facing west = wind from west (x正向来流)
+    NacYaw                  300.0;
+
+    // Air density [kg/m^3]
+    fluidDensity            1.225;
+}
+
+
+turbine1
+{
+    turbineType             NREL5MW_Simple;
+
+    // Tower base location (x y z) [m]
+    baseLocation            (600 0 0);
+
+    // Actuator disk discretization
+    nRadial                 40;
+    azimuthMaxDis           10.0;
+    pointDistType           uniform;
+    pointInterpType         linear;
+
+    // Gaussian projection kernel width [m]
+    // Rule of thumb: 2-3 times the local grid cell size
+    epsilon                 15.0;
+
+    // Fixed nacelle yaw angle (compass degrees: 0=N, 90=E, 180=S, 270=W)
+    // 270 = facing west = wind from west (x正向来流)
+    NacYaw                  270.0;
+
+    // Air density [kg/m^3]
+    fluidDensity            1.225;
+}
+// ************************************************************************* //

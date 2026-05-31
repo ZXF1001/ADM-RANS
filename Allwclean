@@ -1,0 +1,16 @@
+#!/bin/bash
+# 清理编译产物
+
+source /home/zxf/OpenFOAM/OpenFOAM-v2512/etc/bashrc
+
+BASE_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+echo "清理 ADM_Simple 库..."
+cd "$BASE_DIR/src"
+wclean
+
+echo "清理 simpleFoamADM solver..."
+cd "$BASE_DIR/applications/solvers/simpleFoamADM"
+wclean
+
+echo "清理完成"

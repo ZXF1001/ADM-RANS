@@ -1,0 +1,23 @@
+#!/bin/bash
+# 编译 ADM_Simple 独立库和 solver
+
+# 加载 OpenFOAM 环境
+source /home/zxf/OpenFOAM/OpenFOAM-v2512/etc/bashrc
+
+BASE_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# 编译库
+echo "编译 ADM_Simple 库..."
+cd "$BASE_DIR/src"
+wmake libso
+
+# 编译 solver
+echo ""
+echo "编译 simpleFoamADM solver..."
+cd "$BASE_DIR/applications/solvers/simpleFoamADM"
+wmake
+
+echo ""
+echo "编译完成！"
+echo "库文件: $FOAM_USER_LIBBIN/libturbineModelsSimple.so"
+echo "Solver: $FOAM_USER_APPBIN/simpleFoamADM"

@@ -1,0 +1,52 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  2.4.0                                 |
+|   \\  /    A nd           | Web:      www.OpenFOAM.org                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       volScalarField;
+    object      k;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+dimensions      [0 2 -2 0 0 0 0];
+
+internalField   uniform 0.54;   // k = 1.5*(I*U)^2 = 1.5*(0.1*6)^2 = 0.54 for TI=10%
+
+boundaryField
+{
+    xMin
+    {
+        type          fixedValue;
+        value         $internalField;
+    }
+
+    xMax
+    {
+        type            inletOutlet;
+        inletValue      $internalField;
+        value           $internalField;
+    }
+
+    zMin
+    {
+        type            slip;
+    }
+
+    zMax
+    {
+        type            slip;
+    }
+
+    "(yMin|yMax)"
+    {
+        type            slip;
+    }
+}
+
+// ************************************************************************* //

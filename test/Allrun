@@ -1,0 +1,6 @@
+cp -r 0.orig 0
+blockMesh
+decomposePar
+mpirun -np 8 potentialFoam -parallel
+mpirun -np 8 simpleFoamADM -parallel
+reconstructPar

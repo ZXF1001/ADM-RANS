@@ -1,0 +1,16 @@
+# lnInclude (symlink) directories - anywhere
+lnInclude
+
+# Build directories - anywhere
+linux*Clang*/
+linux*Gcc*/
+linux*Icc*/
+solaris*Gcc*/
+SunOS*Gcc*/
+platforms/
+
+processor*/
+
+turbineOutput
+
+polyMesh
