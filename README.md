@@ -1,6 +1,6 @@
-# ADM_Simple 独立库
+# ADM_Simple独立库
 
-简化的执行器盘模型（Actuator Disk Model），从 SOWFA-6 提取并改进。
+简化的执行器盘模型（Actuator Disk Model），从SOWFA-6提取并改进。
 
 ## 目录结构
 
@@ -27,12 +27,12 @@ ADM_Simple_Standalone/
 
 ## 特性
 
-- 基于 Cp/Ct 曲线的力计算（无需 BEM 理论）
-- 支持 PowerCtData（功率曲线）和 CpCtData（功率系数曲线）格式
+- 基于Cp/Ct曲线的力计算（无需BEM理论）
+- 支持PowerCtData（功率曲线）和CpCtData（功率系数曲线）格式
 - 诱导因子迭代修正（从盘面风速反推上游风速）
 - 高斯核投影（正确归一化，积分=1.0）
-- 移除预锥角（ADM 是平面盘，PreCone 无意义）
-- 完全脱离 SOWFA，只依赖 OpenFOAM 标准库
+- 移除预锥角（ADM是平面盘，PreCone无意义）
+- 完全脱离SOWFA，只依赖OpenFOAM标准库
 
 ## 编译
 
@@ -106,13 +106,13 @@ simpleFoamADM
 
 不需要在 `system/controlDict` 中手动加载库，solver 已经链接了 `libturbineModelsSimple.so`。
 
-## 改进内容（相比原始 SOWFA-6）
+## 改进内容（相比原始SOWFA-6）
 
 1. 数据格式：支持行业标准的功率曲线格式（PowerCtData）
 2. 来流修正：诱导因子迭代修正，从盘面风速反推上游风速
-3. 几何修正：移除 ADM 中无意义的预锥角
+3. 几何修正：移除ADM中无意义的预锥角
 4. 高斯核：确认原始公式正确（积分=1.0）
-5. 独立编译：完全脱离 SOWFA，只依赖 OpenFOAM 标准库
+5. 独立编译：完全脱离SOWFA，只依赖OpenFOAM标准库
 
 ## 依赖
 
