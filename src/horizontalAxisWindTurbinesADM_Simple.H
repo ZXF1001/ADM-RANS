@@ -51,9 +51,6 @@ private:
             //- Degrees to radians conversion factor
             const scalar degRad;
 
-            //- Revolutions per minute to radians per second conversion factor
-            const scalar rpmRadSec;
-
 
         //- Current time step size
         scalar dt;
@@ -75,7 +72,6 @@ private:
         word outputControl;
         scalar outputInterval;
         scalar lastOutputTime;
-        scalar perturb;
         label outputIndex;
 
 
@@ -116,8 +112,7 @@ private:
             //- Projection radius (m)
             DynamicList<scalar> projectionRadius;
 
-            //- Rotation direction ("cw" or "ccw")
-            DynamicList<word> rotationDir;
+            //- Rotation direction ("cw" or "ccw") — unused in ADM, removed
 
             //- Fixed nacelle yaw angle (radians, standard convention)
             DynamicList<scalar> nacYaw;
@@ -158,15 +153,14 @@ private:
             DynamicList<scalar> ShftTilt;
 
 
-        //- Turbine Type Level Data (Performance Curves)
-            //- Wind speed table for Cp/Ct curves (m/s)
+        //- Wind speed table for performance curves (m/s)
             DynamicList<List<scalar>> windSpeedTable;
-
-            //- Power coefficient curve
-            DynamicList<List<scalar>> CpTable;
 
             //- Thrust coefficient curve
             DynamicList<List<scalar>> CtTable;
+
+            //- Power curve (W, divided by density)
+            DynamicList<List<scalar>> PowerTable;
 
 
         //- Turbine Instance Level Data (Computed)
@@ -178,9 +172,6 @@ private:
 
             //- Unit vector along shaft (pointing downwind)
             DynamicList<vector> uvShaft;
-
-            //- Shaft direction indicator (+1 or -1)
-            DynamicList<scalar> uvShaftDir;
 
             //- Unit vector along tower (pointing up)
             DynamicList<vector> uvTower;
@@ -234,19 +225,14 @@ private:
             //- Total thrust force (N/rho)
             DynamicList<scalar> thrust;
 
-            //- Rotor torque (N-m/rho)
-            DynamicList<scalar> torqueRotor;
-
             //- Rotor power (W/rho)
             DynamicList<scalar> powerRotor;
 
 
         //- Output file pointers
             OFstream* thrustFile_;
-            OFstream* torqueRotorFile_;
             OFstream* powerRotorFile_;
             OFstream* inflowVelocityFile_;
-            OFstream* CpFile_;
             OFstream* CtFile_;
 
 

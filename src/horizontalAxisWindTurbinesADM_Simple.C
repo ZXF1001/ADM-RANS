@@ -25,7 +25,6 @@ horizontalAxisWindTurbinesADM_Simple::horizontalAxisWindTurbinesADM_Simple
     mesh_(U.mesh()),
     U_(U),
     degRad(Foam::constant::mathematical::pi / 180.0),
-    rpmRadSec(2.0 * Foam::constant::mathematical::pi / 60.0),
     dt(runTime_.deltaT().value()),
     time(runTime_.timeName()),
     t(runTime_.value()),
@@ -92,8 +91,6 @@ horizontalAxisWindTurbinesADM_Simple::horizontalAxisWindTurbinesADM_Simple
                     .lookupOrDefault<word>("outputControl", "timeStep");
     outputInterval = turbineArrayProperties.subDict("globalProperties")
                      .lookupOrDefault<scalar>("outputInterval", 1);
-    perturb = turbineArrayProperties.subDict("globalProperties")
-              .lookupOrDefault<scalar>("perturb", 1E-5);
     lastOutputTime = runTime_.startTime().value();
     outputIndex = 0;
 
@@ -110,7 +107,6 @@ horizontalAxisWindTurbinesADM_Simple::horizontalAxisWindTurbinesADM_Simple
         epsilon.append(turbDict.get<scalar>("epsilon"));
         forceScalar.append(turbDict.lookupOrDefault<scalar>("forceScalar", 1.0));
         inflowVelocityScalar.append(turbDict.lookupOrDefault<scalar>("inflowVelocityScalar", 1.0));
-        rotationDir.append(turbDict.lookupOrDefault<word>("rotationDir", "cw"));
         nacYaw.append(turbDict.get<scalar>("NacYaw"));
         fluidDensity.append(turbDict.get<scalar>("fluidDensity"));
     }
@@ -175,17 +171,14 @@ horizontalAxisWindTurbinesADM_Simple::horizontalAxisWindTurbinesADM_Simple
         ShftTilt.append(turbineProperties.lookupOrDefault<scalar>("ShftTilt", 0.0));
 
         // Read performance curves: support both PowerCtData and CpCtData formats
-        List<scalar> wsTable, cpVals, ctVals;
+        List<scalar> wsTable, powerVals, ctVals;
 
         if (turbineProperties.found("PowerCtData"))
         {
             // Industry-standard format: (windSpeed[m/s], Power[kW], Ct)
             List<List<scalar>> PowerCtData(turbineProperties.lookup("PowerCtData"));
 
-            scalar A = Foam::constant::mathematical::pi * Foam::sqr(TipRad[i]);
-            // fluidDensity is per-turbine-instance; use the first turbine of this type
-            // We need density for Cp conversion: find the first turbine of this type
-            scalar rho = 1.225;  // default; will be overridden below
+            scalar rho = 1.225;  // default density
             forAll(turbineType, t)
             {
                 if (turbineType[t] == turbineTypeDistinct[i])
@@ -203,12 +196,8 @@ horizontalAxisWindTurbinesADM_Simple::horizontalAxisWindTurbinesADM_Simple
 
                 wsTable.append(V);
                 ctVals.append(Ct);
-
-                // Cp = P / (0.5 * rho * A * V^3)
-                scalar Cp = (V > SMALL)
-                    ? P_W / (0.5 * rho * A * Foam::pow(V, 3))
-                    : 0.0;
-                cpVals.append(Cp);
+                // Store power divided by density (for incompressible solver)
+                powerVals.append(P_W / rho);
             }
         }
         else
@@ -216,16 +205,35 @@ horizontalAxisWindTurbinesADM_Simple::horizontalAxisWindTurbinesADM_Simple
             // Legacy format: (windSpeed[m/s], Cp, Ct)
             List<List<scalar>> CpCtData(turbineProperties.lookup("CpCtData"));
 
+            scalar A = Foam::constant::mathematical::pi * Foam::sqr(TipRad[i]);
+            scalar rho = 1.225;
+            forAll(turbineType, t)
+            {
+                if (turbineType[t] == turbineTypeDistinct[i])
+                {
+                    rho = fluidDensity[t];
+                    break;
+                }
+            }
+
             forAll(CpCtData, j)
             {
-                wsTable.append(CpCtData[j][0]);
-                cpVals.append(CpCtData[j][1]);
-                ctVals.append(CpCtData[j][2]);
+                scalar V  = CpCtData[j][0];
+                scalar Cp = CpCtData[j][1];
+                scalar Ct = CpCtData[j][2];
+
+                wsTable.append(V);
+                ctVals.append(Ct);
+                // Convert Cp to power: P = 0.5 * rho * A * V^3 * Cp
+                scalar P_W = (V > SMALL)
+                    ? 0.5 * rho * A * Foam::pow(V, 3) * Cp
+                    : 0.0;
+                powerVals.append(P_W / rho);
             }
         }
 
         windSpeedTable.append(wsTable);
-        CpTable.append(cpVals);
+        PowerTable.append(powerVals);
         CtTable.append(ctVals);
     }
 
@@ -302,12 +310,12 @@ horizontalAxisWindTurbinesADM_Simple::horizontalAxisWindTurbinesADM_Simple
         totDiskPoints.append(0);
         int j = turbineTypeID[i];
 
-        // Shaft direction
-        uvShaftDir.append(OverHang[j] / mag(OverHang[j]));
+        // Shaft direction: positive if OverHang > 0 (downwind)
+        scalar shaftDir = (OverHang[j] > 0) ? 1.0 : -1.0;
 
         // Unit vector along shaft
         uvShaft.append(rotorApex[i] - towerShaftIntersect[i]);
-        uvShaft[i] = (uvShaft[i] / mag(uvShaft[i])) * uvShaftDir[i];
+        uvShaft[i] = (uvShaft[i] / mag(uvShaft[i])) * shaftDir;
 
         // Unit vector along tower
         uvTower.append(towerShaftIntersect[i] - baseLocation[i]);
@@ -351,7 +359,7 @@ horizontalAxisWindTurbinesADM_Simple::horizontalAxisWindTurbinesADM_Simple
         minDisCellID.append(List<List<label>>(nRadial[i]));
 
         // Generate point coordinates
-        // ADM: disk is perpendicular to shaft, PreCone is ignored
+        // ADM: disk is perpendicular to shaft axis
         scalar beta = -ShftTilt[j];
         vector root = rotorApex[i];
         root.x() += HubRad[j] * Foam::sin(beta);
@@ -395,7 +403,6 @@ horizontalAxisWindTurbinesADM_Simple::horizontalAxisWindTurbinesADM_Simple
         // Initialize output scalars
         inflowVelocity.append(0.0);
         thrust.append(0.0);
-        torqueRotor.append(0.0);
         powerRotor.append(0.0);
     }
 
@@ -409,7 +416,11 @@ horizontalAxisWindTurbinesADM_Simple::horizontalAxisWindTurbinesADM_Simple
         rotorApex[i] = rotatePoint(rotorApex[i], towerShaftIntersect[i], uvTower[i], yawAngle);
 
         uvShaft[i] = rotorApex[i] - towerShaftIntersect[i];
-        uvShaft[i] = (uvShaft[i] / mag(uvShaft[i])) * uvShaftDir[i];
+        {
+            int j = turbineTypeID[i];
+            scalar shaftDir = (OverHang[j] > 0) ? 1.0 : -1.0;
+            uvShaft[i] = (uvShaft[i] / mag(uvShaft[i])) * shaftDir;
+        }
 
         forAll(bladePoints[i], j)
         {
@@ -446,10 +457,8 @@ horizontalAxisWindTurbinesADM_Simple::~horizontalAxisWindTurbinesADM_Simple()
     if (Pstream::master())
     {
         delete thrustFile_;
-        delete torqueRotorFile_;
         delete powerRotorFile_;
         delete inflowVelocityFile_;
-        delete CpFile_;
         delete CtFile_;
     }
 }
@@ -507,7 +516,6 @@ void horizontalAxisWindTurbinesADM_Simple::findControlProcNo()
                 {
                     scalar dis = mag(
                         mesh_.C()[sphereCells[i][m]]
-                        + perturb * vector(1,1,1)
                         - bladePoints[i][j][k]
                     );
                     if (dis < minDis)
@@ -659,20 +667,21 @@ void horizontalAxisWindTurbinesADM_Simple::computeBladeForce()
         // Disk-averaged wind speed (SOWFA-6 original approach)
         scalar V = max(inflowVelocity[i], SMALL);
 
-        // Interpolate Cp/Ct from tables
+        // Interpolate Ct and Power from tables
         scalar Ct = interpolate(V, windSpeedTable[n], CtTable[n]);
-        scalar Cp = interpolate(V, windSpeedTable[n], CpTable[n]);
+        scalar Power = interpolate(V, windSpeedTable[n], PowerTable[n]);
 
-        // Clamp to physical range
+        // Clamp Ct to physical range
         Ct = max(0.0, min(Ct, 2.0));
-        Cp = max(0.0, min(Cp, 0.593));   // Betz limit
 
         // Rotor swept area
         scalar A = Foam::constant::mathematical::pi * Foam::sqr(TipRad[n]);
 
-        // Total thrust and power (divided by density for incompressible solver)
-        thrust[i]     = 0.5 * Ct * Foam::sqr(V) * A;          // N / rho
-        powerRotor[i] = 0.5 * Cp * Foam::pow(V, 3) * A;       // W / rho
+        // Total thrust (divided by density for incompressible solver)
+        thrust[i] = 0.5 * Ct * Foam::sqr(V) * A;  // N / rho
+
+        // Power from table (already divided by density)
+        powerRotor[i] = Power;  // W / rho
 
         // Distribute thrust uniformly over all actuator points
         scalar totalPts = scalar(totDiskPoints[i]);
@@ -687,6 +696,9 @@ void horizontalAxisWindTurbinesADM_Simple::computeBladeForce()
                 bladeForce[i][j][k] = -fPoint * uvShaft[i];
             }
         }
+
+        // Calculate Cp from actual power for output
+        scalar Cp = powerRotor[i] / (0.5 * A * Foam::pow(V, 3));
 
         Info << "Turbine " << i
              << ": V_disk = " << V << " m/s"
@@ -844,17 +856,13 @@ void horizontalAxisWindTurbinesADM_Simple::openOutputFiles()
         if (!isDir(rootDir/time)) mkDir(rootDir/time);
 
         thrustFile_         = new OFstream(rootDir/time/"thrust");
-        torqueRotorFile_    = new OFstream(rootDir/time/"torqueRotor");
         powerRotorFile_     = new OFstream(rootDir/time/"powerRotor");
         inflowVelocityFile_ = new OFstream(rootDir/time/"inflowVelocity");
-        CpFile_             = new OFstream(rootDir/time/"Cp");
         CtFile_             = new OFstream(rootDir/time/"Ct");
 
         *thrustFile_         << "#Turbine  Time(s)  dt(s)  thrust(N)" << endl;
-        *torqueRotorFile_    << "#Turbine  Time(s)  dt(s)  torqueRotor(N-m)" << endl;
         *powerRotorFile_     << "#Turbine  Time(s)  dt(s)  powerRotor(W)" << endl;
         *inflowVelocityFile_ << "#Turbine  Time(s)  dt(s)  inflowVelocity(m/s)" << endl;
-        *CpFile_             << "#Turbine  Time(s)  dt(s)  Cp" << endl;
         *CtFile_             << "#Turbine  Time(s)  dt(s)  Ct" << endl;
     }
 }
@@ -869,18 +877,13 @@ void horizontalAxisWindTurbinesADM_Simple::printOutputFiles()
             int n = turbineTypeID[i];
             scalar V  = max(inflowVelocity[i], SMALL);
             scalar Ct = interpolate(V, windSpeedTable[n], CtTable[n]);
-            scalar Cp = interpolate(V, windSpeedTable[n], CpTable[n]);
 
             *thrustFile_         << i << " " << time << " " << dt << " "
                                  << thrust[i] * fluidDensity[i] << endl;
-            *torqueRotorFile_    << i << " " << time << " " << dt << " "
-                                 << powerRotor[i] * fluidDensity[i] / max(V, SMALL) << endl;
             *powerRotorFile_     << i << " " << time << " " << dt << " "
                                  << powerRotor[i] * fluidDensity[i] << endl;
             *inflowVelocityFile_ << i << " " << time << " " << dt << " "
                                  << inflowVelocity[i] << endl;
-            *CpFile_             << i << " " << time << " " << dt << " "
-                                 << Cp << endl;
             *CtFile_             << i << " " << time << " " << dt << " "
                                  << Ct << endl;
         }
