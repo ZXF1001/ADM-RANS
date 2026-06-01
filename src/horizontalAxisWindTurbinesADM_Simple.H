@@ -214,6 +214,9 @@ private:
             //- Closest cell ID for each actuator point
             DynamicList<List<List<label>>> minDisCellID;
 
+            //- Pre-allocated temporary array for wind vectors (避免每步重新分配)
+            List<vector> windVectorsLocal_;
+
 
         //- Turbine Output Data
             //- Disk-averaged inflow velocity (m/s)

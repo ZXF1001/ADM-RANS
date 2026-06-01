@@ -439,6 +439,10 @@ horizontalAxisWindTurbinesADM_Simple::horizontalAxisWindTurbinesADM_Simple
     // Step 9: Find control processors and do initial calculation
     // -----------------------------------------------------------------------
     findControlProcNo();
+
+    // 预分配 windVectorsLocal_ 内存（避免每个时间步重新分配）
+    windVectorsLocal_.setSize(totDiskPointsArray, vector::zero);
+
     computeWindVectors();
     computeAverageInflow();
     computeBladeForce();
@@ -575,7 +579,8 @@ void horizontalAxisWindTurbinesADM_Simple::findControlProcNo()
 
 void horizontalAxisWindTurbinesADM_Simple::computeWindVectors()
 {
-    List<vector> windVectorsLocal(totDiskPointsArray, vector::zero);
+    // 使用预分配的成员变量，清零而非重新分配
+    windVectorsLocal_ = vector::zero;
 
     if (pointInterpType[0] == "linear")
     {
@@ -597,13 +602,13 @@ void horizontalAxisWindTurbinesADM_Simple::computeWindVectors()
             {
                 if (minDisCellID[i][j][k] != -1)
                 {
-                    windVectorsLocal[iter] = U_[minDisCellID[i][j][k]];
+                    windVectorsLocal_[iter] = U_[minDisCellID[i][j][k]];
 
                     if (pointInterpType[i] == "linear")
                     {
                         vector dx = bladePoints[i][j][k]
                                   - mesh_.C()[minDisCellID[i][j][k]];
-                        windVectorsLocal[iter] += dx & gradU[minDisCellID[i][j][k]];
+                        windVectorsLocal_[iter] += dx & gradU[minDisCellID[i][j][k]];
                     }
                 }
                 iter++;
@@ -614,9 +619,9 @@ void horizontalAxisWindTurbinesADM_Simple::computeWindVectors()
     // Combine across all processors
     if (Pstream::parRun())
     {
-        forAll(windVectorsLocal, idx)
+        forAll(windVectorsLocal_, idx)
         {
-            reduce(windVectorsLocal[idx], sumOp<vector>());
+            reduce(windVectorsLocal_[idx], sumOp<vector>());
         }
     }
 
@@ -627,7 +632,7 @@ void horizontalAxisWindTurbinesADM_Simple::computeWindVectors()
         {
             forAll(windVectors[i][j], k)
             {
-                windVectors[i][j][k] = windVectorsLocal[iter] * inflowVelocityScalar[i];
+                windVectors[i][j][k] = windVectorsLocal_[iter] * inflowVelocityScalar[i];
                 iter++;
             }
         }
@@ -758,6 +763,11 @@ void horizontalAxisWindTurbinesADM_Simple::computeBodyForce()
     {
         if (sphereCells[i].size() > 0)
         {
+            // 预计算常量：对涡轮机 i 是常量，移到外层循环避免重复计算
+            const scalar eps3_pi15 = Foam::pow(epsilon[i], 3)
+                                     * Foam::pow(Foam::constant::mathematical::pi, 1.5);
+            const scalar invEps2   = 1.0 / Foam::sqr(epsilon[i]);
+
             forAll(bladeForce[i], j)
             {
                 forAll(bladeForce[i][j], k)
@@ -771,9 +781,7 @@ void horizontalAxisWindTurbinesADM_Simple::computeBodyForce()
                         if (dis <= projectionRadius[i])
                         {
                             scalar gaussKernel =
-                                Foam::exp(-Foam::sqr(dis / epsilon[i]))
-                                / (Foam::pow(epsilon[i], 3)
-                                   * Foam::pow(Foam::constant::mathematical::pi, 1.5));
+                                Foam::exp(-Foam::sqr(dis) * invEps2) / eps3_pi15;
 
                             bodyForce[sphereCells[i][m]] +=
                                 bladeForce[i][j][k]
@@ -845,16 +853,26 @@ scalar horizontalAxisWindTurbinesADM_Simple::interpolate
     if (xNew <= xOld[0])          return yOld[0];
     if (xNew >= xOld.last())      return yOld.last();
 
-    // Find bracketing interval
-    for (label i = 0; i < xOld.size() - 1; i++)
+    // 二分查找：O(log n) 替代线性搜索 O(n)
+    label lo = 0;
+    label hi = xOld.size() - 2;
+
+    while (lo < hi)
     {
-        if (xNew >= xOld[i] && xNew <= xOld[i+1])
+        label mid = (lo + hi) / 2;
+        if (xNew > xOld[mid + 1])
         {
-            scalar t = (xNew - xOld[i]) / (xOld[i+1] - xOld[i]);
-            return yOld[i] + t * (yOld[i+1] - yOld[i]);
+            lo = mid + 1;
+        }
+        else
+        {
+            hi = mid;
         }
     }
-    return yOld.last();
+
+    // 线性插值
+    scalar t = (xNew - xOld[lo]) / (xOld[lo+1] - xOld[lo]);
+    return yOld[lo] + t * (yOld[lo+1] - yOld[lo]);
 }
 
 
