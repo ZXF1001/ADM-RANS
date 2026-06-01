@@ -22,15 +22,13 @@ TowerHt         90.0;       // Tower height [m]
 Twr2Shft        2.4;        // Tower top to shaft centerline [m]
 OverHang        5.0;        // Overhang distance [m]
 UndSling        0.0;        // Undersling [m]
-ShftTilt        0;        // Shaft tilt angle [deg]
-PreCone         (0 0 0);  // Blade precone angles [deg]
+ShftTilt        0;          // Shaft tilt angle [deg]
 
 // Power/Ct performance curves (industry-standard format)
 // Format: (windSpeed[m/s]  Power[kW]  Ct)
 PowerCtData
 (
     (0.0  0          0)
-    (2.0  0          0)
     (2.5  0          0)
     (3.0  36.7221558 0.990000000)
     (3.5  94.6567812 0.990000000)
@@ -77,8 +75,7 @@ PowerCtData
     (24.0 4999.93252 0.0634551800)
     (24.5 5000.01104 0.0603226700)
     (25.0 5000.01277 0.0574199900)
-    (25.0 4717.24338 0.0547260900)
-    (25.0 0.0        0)
+    (25.01 0.0       0)
     (50.0 0.0        0)
 );
 

@@ -103,9 +103,6 @@ private:
             //- Gaussian kernel width (m)
             DynamicList<scalar> epsilon;
 
-            //- Force scaling factor
-            DynamicList<scalar> forceScalar;
-
             //- Inflow velocity scaling factor
             DynamicList<scalar> inflowVelocityScalar;
 

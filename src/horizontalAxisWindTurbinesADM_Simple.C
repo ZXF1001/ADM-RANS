@@ -105,7 +105,6 @@ horizontalAxisWindTurbinesADM_Simple::horizontalAxisWindTurbinesADM_Simple
         pointDistType.append(turbDict.lookupOrDefault<word>("pointDistType", "uniform"));
         pointInterpType.append(turbDict.lookupOrDefault<word>("pointInterpType", "cellCenter"));
         epsilon.append(turbDict.get<scalar>("epsilon"));
-        forceScalar.append(turbDict.lookupOrDefault<scalar>("forceScalar", 1.0));
         inflowVelocityScalar.append(turbDict.lookupOrDefault<scalar>("inflowVelocityScalar", 1.0));
         nacYaw.append(turbDict.get<scalar>("NacYaw"));
         fluidDensity.append(turbDict.get<scalar>("fluidDensity"));
