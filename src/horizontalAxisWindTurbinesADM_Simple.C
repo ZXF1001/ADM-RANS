@@ -664,24 +664,58 @@ void horizontalAxisWindTurbinesADM_Simple::computeBladeForce()
     {
         int n = turbineTypeID[i];
 
-        // Disk-averaged wind speed (SOWFA-6 original approach)
-        scalar V = max(inflowVelocity[i], SMALL);
+        // Disk-averaged wind speed measured in CFD (reduced by turbine induction)
+        scalar V_disk = max(inflowVelocity[i], SMALL);
 
-        // Interpolate Ct and Power from tables
-        scalar Ct = interpolate(V, windSpeedTable[n], CtTable[n]);
-        scalar Power = interpolate(V, windSpeedTable[n], PowerTable[n]);
+        // Recover V_inf (local undisturbed wind speed) from V_disk via momentum theory:
+        //   V_disk = V_inf * (1 - a)
+        //   a = 0.5 * (1 - sqrt(1 - Ct(V_inf)))
+        //
+        // Ct table is defined based on V_inf (IEC 61400-12 standard).
+        // This fixed-point iteration is valid for both flat and complex terrain:
+        // it removes only the turbine's own induction effect, preserving
+        // terrain-induced flow variations already captured in V_disk.
+        //
+        // Convergence: f'(V_inf) < 0 for typical Ct curves (Ct decreases with V),
+        // so iteration oscillates; under-relaxation (omega=0.5) damps it.
+        scalar V_inf = V_disk;  // initial guess
+        const scalar tol   = 1e-4;
+        const int maxIter  = 30;
+        const scalar omega = 0.5;  // under-relaxation factor
 
-        // Clamp Ct to physical range
-        Ct = max(0.0, min(Ct, 2.0));
+        for (int iter = 0; iter < maxIter; iter++)
+        {
+            // Ct must be in [0, 0.99]: Ct >= 1 makes sqrt(1-Ct) imaginary
+            scalar Ct_k = interpolate(V_inf, windSpeedTable[n], CtTable[n]);
+            Ct_k = max(0.0, min(Ct_k, 0.99));
+
+            scalar a_k = 0.5 * (1.0 - Foam::sqrt(1.0 - Ct_k));
+
+            // Raw update from momentum theory
+            scalar V_inf_raw = V_disk / max(1.0 - a_k, 0.01);
+
+            // Under-relaxation to damp oscillations
+            scalar V_inf_new = (1.0 - omega) * V_inf + omega * V_inf_raw;
+
+            if (mag(V_inf_new - V_inf) < tol)
+            {
+                V_inf = V_inf_new;
+                break;
+            }
+            V_inf = V_inf_new;
+        }
+
+        // Final lookup at converged V_inf
+        scalar Ct    = interpolate(V_inf, windSpeedTable[n], CtTable[n]);
+        scalar Power = interpolate(V_inf, windSpeedTable[n], PowerTable[n]);
+        Ct = max(0.0, min(Ct, 0.99));
 
         // Rotor swept area
         scalar A = Foam::constant::mathematical::pi * Foam::sqr(TipRad[n]);
 
-        // Total thrust (divided by density for incompressible solver)
-        thrust[i] = 0.5 * Ct * Foam::sqr(V) * A;  // N / rho
-
-        // Power from table (already divided by density)
-        powerRotor[i] = Power;  // W / rho
+        // Thrust and power based on V_inf (consistent with table definition)
+        thrust[i]     = 0.5 * Ct * Foam::sqr(V_inf) * A;  // N / rho
+        powerRotor[i] = Power;                              // W / rho
 
         // Distribute thrust uniformly over all actuator points
         scalar totalPts = scalar(totDiskPoints[i]);
@@ -697,13 +731,16 @@ void horizontalAxisWindTurbinesADM_Simple::computeBladeForce()
             }
         }
 
-        // Calculate Cp from actual power for output
-        scalar Cp = powerRotor[i] / (0.5 * A * Foam::pow(V, 3));
+        // Induction factor and Cp for diagnostic output
+        scalar a_final = 0.5 * (1.0 - Foam::sqrt(1.0 - Ct));
+        scalar Cp = powerRotor[i] / (0.5 * A * Foam::pow(V_inf, 3));
 
         Info << "Turbine " << i
-             << ": V_disk = " << V << " m/s"
-             << "  Ct = " << Ct
-             << "  Cp = " << Cp
+             << ": V_disk = " << V_disk << " m/s"
+             << "  V_inf = "  << V_inf  << " m/s"
+             << "  a = "      << a_final
+             << "  Ct = "     << Ct
+             << "  Cp = "     << Cp
              << "  Thrust = " << thrust[i] * fluidDensity[i] << " N"
              << "  Power = "  << powerRotor[i] * fluidDensity[i] / 1e6 << " MW"
              << endl;
