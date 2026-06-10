@@ -1,0 +1,121 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2512                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    location    "constant";
+    object      turbineArrayProperties;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+globalProperties
+{
+    outputControl       timeStep;
+    outputInterval      10;
+}
+
+turbine0
+{
+    turbineType             DEC_4_2MW_155;
+    // Tower base location (x y z) [m]
+    baseLocation            (386.6525406697767 915.379290819168 1504.250273249305);
+    pointDistType           uniform;
+    pointInterpType         linear;
+    // Fixed nacelle yaw angle (compass degrees: 0=N, 90=E, 180=S, 270=W)
+    NacYaw                  270.0;
+    fluidDensity            1.225;
+}
+
+turbine1
+{
+    turbineType             DEC_4_2MW_155;
+    // Tower base location (x y z) [m]
+    baseLocation            (186.2628959072754 141.2806970104575 1537.9419968934903);
+    pointDistType           uniform;
+    pointInterpType         linear;
+    // Fixed nacelle yaw angle (compass degrees: 0=N, 90=E, 180=S, 270=W)
+    NacYaw                  270.0;
+    fluidDensity            1.225;
+}
+
+turbine2
+{
+    turbineType             DEC_4_2MW_155;
+    // Tower base location (x y z) [m]
+    baseLocation            (310.58107377029955 -107.83250866830356 1524.363263333454);
+    pointDistType           uniform;
+    pointInterpType         linear;
+    // Fixed nacelle yaw angle (compass degrees: 0=N, 90=E, 180=S, 270=W)
+    NacYaw                  270.0;
+    fluidDensity            1.225;
+}
+
+
+turbine3
+{
+    turbineType             DEC_4_2MW_155;
+    // Tower base location (x y z) [m]
+    baseLocation            (-32.41353443358097 -202.0447149574757 1532.1102747372504);
+    pointDistType           uniform;
+    pointInterpType         linear;
+    // Fixed nacelle yaw angle (compass degrees: 0=N, 90=E, 180=S, 270=W)
+    NacYaw                  270.0;
+    fluidDensity            1.225;
+}
+
+
+turbine4
+{
+    turbineType             DEC_4_2MW_155;
+    // Tower base location (x y z) [m]
+    baseLocation            (-315.3019393738359 69.15974496304995 1524.2382904030126);
+    pointDistType           uniform;
+    pointInterpType         linear;
+    // Fixed nacelle yaw angle (compass degrees: 0=N, 90=E, 180=S, 270=W)
+    NacYaw                  270.0;
+    fluidDensity            1.225;
+}
+
+turbine5
+{
+    turbineType             DEC_4_2MW_155;
+    // Tower base location (x y z) [m]
+    baseLocation            (-692.3411597069353 16.261711634695658 1495.0000000000002);
+    pointDistType           uniform;
+    pointInterpType         linear;
+    // Fixed nacelle yaw angle (compass degrees: 0=N, 90=E, 180=S, 270=W)
+    NacYaw                  270.0;
+    fluidDensity            1.225;
+}
+
+turbine6
+{
+    turbineType             DEC_4_2MW_155;
+    // Tower base location (x y z) [m]
+    baseLocation            (616.4409329826012 -59.95524112880241 1492.945769185247);
+    pointDistType           uniform;
+    pointInterpType         linear;
+    // Fixed nacelle yaw angle (compass degrees: 0=N, 90=E, 180=S, 270=W)
+    NacYaw                  270.0;
+    fluidDensity            1.225;
+}
+
+turbine7
+{
+    turbineType             DEC_4_2MW_155;
+    // Tower base location (x y z) [m]
+    baseLocation            (-492.92858290020393 -862.320227280259 1483.4460863185718);
+    pointDistType           uniform;
+    pointInterpType         linear;
+    // Fixed nacelle yaw angle (compass degrees: 0=N, 90=E, 180=S, 270=W)
+    NacYaw                  270.0;
+    fluidDensity            1.225;
+}
+// ************************************************************************* //

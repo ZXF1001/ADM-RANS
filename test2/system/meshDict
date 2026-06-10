@@ -1,0 +1,195 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                |
+| \\      /  F ield         | cfMesh: A library for mesh generation          | 
+|  \\    /   O peration     |                                                |
+|   \\  /    A nd           | Author: Franjo Juretic                         | 
+|    \\/     M anipulation  | E-mail: franjo.juretic@c-fields.com            |
+\*---------------------------------------------------------------------------*/
+
+FoamFile
+{
+    version   2.0;
+    format    ascii;
+    class     dictionary;
+    location  "system";
+    object    meshDict;
+}
+
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+surfaceFile "terrain.obj";
+
+maxCellSize 80;
+
+objectRefinements
+{
+    region1
+    {
+        cellSize 20;
+        type box;
+        centre  (500 0 1000);
+        lengthX  3000;
+        lengthY  3000;
+        lengthZ  2000;
+    }
+
+    // region2
+    // {
+    //     cellSize 10;
+    //     type box;
+    //     centre  (0 0 750);
+    //     lengthX  3000;
+    //     lengthY  3000;
+    //     lengthZ  1500;
+    // }
+wt0
+{
+    cellSize 5;
+    type cone;
+    p0 (347.9025406697767 915.379290819168 1604.250273249305);
+    p1 (851.6525406697767 915.379290819168 1604.250273249305);
+    radius0 116.25;
+    radius1 116.25;
+}
+    
+wt1
+{
+    cellSize 5;
+    type cone;
+    p0 (147.5128959072754 141.2806970104575 1637.9419968934903);
+    p1 (651.2628959072754 141.2806970104575 1637.9419968934903);
+    radius0 116.25;
+    radius1 116.25;
+}
+    
+wt2
+{
+    cellSize 5;
+    type cone;
+    p0 (271.83107377029955 -107.83250866830356 1624.363263333454);
+    p1 (775.5810737702996 -107.83250866830356 1624.363263333454);
+    radius0 116.25;
+    radius1 116.25;
+}
+    
+wt3
+{
+    cellSize 5;
+    type cone;
+    p0 (-71.16353443358096 -202.0447149574757 1632.1102747372504);
+    p1 (432.586465566419 -202.0447149574757 1632.1102747372504);
+    radius0 116.25;
+    radius1 116.25;
+}
+    
+wt4
+{
+    cellSize 5;
+    type cone;
+    p0 (-354.0519393738359 69.15974496304995 1624.2382904030126);
+    p1 (149.69806062616408 69.15974496304995 1624.2382904030126);
+    radius0 116.25;
+    radius1 116.25;
+}
+    
+wt5
+{
+    cellSize 5;
+    type cone;
+    p0 (-731.0911597069353 16.261711634695658 1595.0000000000002);
+    p1 (-227.3411597069353 16.261711634695658 1595.0000000000002);
+    radius0 116.25;
+    radius1 116.25;
+}
+    
+wt6
+{
+    cellSize 5;
+    type cone;
+    p0 (577.6909329826012 -59.95524112880241 1592.945769185247);
+    p1 (1081.4409329826012 -59.95524112880241 1592.945769185247);
+    radius0 116.25;
+    radius1 116.25;
+}
+    
+wt7
+{
+    cellSize 5;
+    type cone;
+    p0 (-531.678582900204 -862.320227280259 1583.4460863185718);
+    p1 (-27.928582900203935 -862.320227280259 1583.4460863185718);
+    radius0 116.25;
+    radius1 116.25;
+}
+    
+}
+
+localRefinement
+{
+    zMin
+    {
+        cellSize 20;
+    }
+}
+
+boundaryLayers
+{
+    patchBoundaryLayers
+    {
+        zMin
+        {
+            nLayers           5;
+            thicknessRatio    1.2;
+            maxFirstLayerThickness 1;
+            allowDiscontinuity 0;
+        }
+    }
+
+    optimiseLayer 1;
+    optimisationParameters
+    {
+        nSmoothNormals 10;
+        relThicknessTol 0.3;
+        featureSizeFactor 0.3;
+        reCalculateNormals 1;
+        maxNumIterations 10;
+    }
+}
+ 
+renameBoundary
+{
+    newPatchNames
+    {
+        "xMin"
+        {
+            newName     xMin;
+            type     patch;
+        }
+        "xMax"
+        {
+            newName     xMax;
+            type     patch;
+        }
+        "yMin"
+        {
+            newName     yMin;
+            type     patch;
+        }
+        "yMax"
+        {
+            newName     yMax;
+            type     patch;
+        }
+        "zMin"
+        {
+            newName     zMin;
+            type     wall;
+        }
+        "zMax"
+        {
+            newName     zMax;
+            type     patch;
+        }
+    }
+}
+// ************************************************************************* //
