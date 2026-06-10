@@ -356,10 +356,11 @@ horizontalAxisWindTurbinesADM_Simple::horizontalAxisWindTurbinesADM_Simple
         totDiskPoints.append(0);
         int j = turbineTypeID[i];
 
-        // Unit vector along shaft (directly from nacYaw and ShftTilt)
+        // Unit vector along shaft (in yaw=0 reference frame, will be rotated in Step 8)
+        // x-axis aligned (pointing downwind for zero yaw), accounting only for shaft tilt
         vector uvShaft_temp;
-        uvShaft_temp.x() = Foam::cos(nacYaw[i]) * Foam::cos(ShftTilt[j]);
-        uvShaft_temp.y() = Foam::sin(nacYaw[i]) * Foam::cos(ShftTilt[j]);
+        uvShaft_temp.x() = Foam::cos(ShftTilt[j]);
+        uvShaft_temp.y() = 0.0;
         uvShaft_temp.z() = Foam::sin(ShftTilt[j]);
         uvShaft.append(uvShaft_temp);
 
@@ -448,6 +449,7 @@ horizontalAxisWindTurbinesADM_Simple::horizontalAxisWindTurbinesADM_Simple
 
         // Initialize output scalars
         inflowVelocity.append(0.0);
+        V_inf_.append(0.0);
         thrust.append(0.0);
         powerRotor.append(0.0);
     }
@@ -455,14 +457,16 @@ horizontalAxisWindTurbinesADM_Simple::horizontalAxisWindTurbinesADM_Simple
     // -----------------------------------------------------------------------
     // Step 8: Yaw nacelle to initial position
     // -----------------------------------------------------------------------
+    // Step 7 generated all geometry in the yaw=0 frame. Here we rotate
+    // uvShaft, rotorApex and bladePoints together by nacYaw around the tower
+    // axis. Rotating a direction vector uses rotationPoint = zero.
     forAll(uvTower, i)
     {
         scalar cosYaw = Foam::cos(nacYaw[i]);
         scalar sinYaw = Foam::sin(nacYaw[i]);
 
         rotorApex[i] = rotatePointCached(rotorApex[i], towerShaftIntersect[i], uvTower[i], cosYaw, sinYaw);
-
-        // uvShaft is already set from nacYaw/ShftTilt angles in Step 7 — no recalculation needed
+        uvShaft[i]   = rotatePointCached(uvShaft[i],   vector::zero,           uvTower[i], cosYaw, sinYaw);
 
         forAll(bladePoints[i], j)
         {
@@ -607,10 +611,8 @@ void horizontalAxisWindTurbinesADM_Simple::findControlProcNo()
     List<scalar> flatGlobalDist = flatLocalDist;
     if (Pstream::parRun())
     {
-        forAll(flatGlobalDist, idx)
-        {
-            reduce(flatGlobalDist[idx], minOp<scalar>());
-        }
+        Pstream::listCombineGather(flatGlobalDist, minEqOp<scalar>());
+        Pstream::broadcast(flatGlobalDist);
     }
     // flatGlobalDist[idx] now holds the global minimum distance for blade point idx
 
@@ -681,13 +683,11 @@ void horizontalAxisWindTurbinesADM_Simple::computeWindVectors()
         }
     }
 
-    // Combine across all processors
+    // Combine across all processors (single collective call instead of per-element reduce)
     if (Pstream::parRun())
     {
-        forAll(windVectorsLocal_, idx)
-        {
-            reduce(windVectorsLocal_[idx], sumOp<vector>());
-        }
+        Pstream::listCombineGather(windVectorsLocal_, plusEqOp<vector>());
+        Pstream::broadcast(windVectorsLocal_);
     }
 
     int iter = 0;
@@ -774,6 +774,9 @@ void horizontalAxisWindTurbinesADM_Simple::computeBladeForce()
             V_inf = V_inf_new;
         }
 
+        // Store V_inf for output file consistency
+        V_inf_[i] = V_inf;
+
         // Final lookup at converged V_inf
         scalar Ct    = interpolate(V_inf, windSpeedTable[n], CtTable[n]);
         scalar Power = interpolate(V_inf, windSpeedTable[n], PowerTable[n]);
@@ -786,17 +789,20 @@ void horizontalAxisWindTurbinesADM_Simple::computeBladeForce()
         thrust[i]     = 0.5 * Ct * Foam::sqr(V_inf) * A;  // N / rho
         powerRotor[i] = Power;                              // W / rho
 
-        // Distribute thrust uniformly over all actuator points
+        // Distribute thrust uniformly over all actuator points.
+        // bladeForce is stored as force-per-point; solidity is NOT applied here
+        // (the solidity multiplication in the old computeBodyForce loop cancelled
+        // out exactly, so both were redundant).
         scalar totalPts = scalar(totDiskPoints[i]);
+        vector fPerPoint = (totalPts > 0)
+            ? (-thrust[i] / totalPts) * uvShaft[i]
+            : vector::zero;
 
         forAll(bladeForce[i], j)
         {
-            scalar fPoint = (totalPts > 0)
-                ? thrust[i] / (totalPts * solidity[i][j])
-                : 0.0;
             forAll(bladeForce[i][j], k)
             {
-                bladeForce[i][j][k] = -fPoint * uvShaft[i];
+                bladeForce[i][j][k] = fPerPoint;
             }
         }
 
@@ -853,10 +859,8 @@ void horizontalAxisWindTurbinesADM_Simple::computeBodyForce()
                             scalar gaussKernel =
                                 Foam::exp(-disSq * invEps2) / eps3_pi15;
 
-                            vector contrib =
-                                bladeForce[i][j][k]
-                                * solidity[i][j]
-                                * gaussKernel;
+                            // bladeForce already stores force-per-point without solidity scaling
+                            vector contrib = bladeForce[i][j][k] * gaussKernel;
 
                             sumForce  += contrib;
                             sumThrust += (-contrib * cellV) & uvShaft[i];
@@ -982,16 +986,6 @@ scalar horizontalAxisWindTurbinesADM_Simple::compassToStandard(scalar dir)
 }
 
 
-scalar horizontalAxisWindTurbinesADM_Simple::standardToCompass(scalar dir)
-{
-    dir = 90.0 - dir;
-    if (dir < 0.0)    dir += 360.0;
-    dir += 180.0;
-    if (dir >= 360.0) dir -= 360.0;
-    return dir;
-}
-
-
 void horizontalAxisWindTurbinesADM_Simple::openOutputFiles()
 {
     if (Pstream::master())
@@ -1025,8 +1019,9 @@ void horizontalAxisWindTurbinesADM_Simple::printOutputFiles()
         forAll(thrust, i)
         {
             int n = turbineTypeID[i];
-            scalar V  = max(inflowVelocity[i], SMALL);
-            scalar Ct = interpolate(V, windSpeedTable[n], CtTable[n]);
+            // Ct must be looked up at V_inf (the table reference velocity per IEC 61400-12),
+            // not at inflowVelocity (= V_disk, which is already reduced by induction).
+            scalar Ct = interpolate(V_inf_[i], windSpeedTable[n], CtTable[n]);
 
             *thrustFile_         << i << " " << time << " " << dt << " "
                                  << thrust[i] * fluidDensity[i] << endl;

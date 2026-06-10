@@ -227,8 +227,11 @@ private:
 
 
         //- Turbine Output Data
-            //- Disk-averaged inflow velocity (m/s)
+            //- Disk-averaged inflow velocity (m/s, = V_disk measured in CFD)
             DynamicList<scalar> inflowVelocity;
+
+            //- Recovered free-stream velocity (m/s, = V_inf from momentum theory inversion)
+            DynamicList<scalar> V_inf_;
 
             //- Total thrust force (N/rho)
             DynamicList<scalar> thrust;
@@ -261,9 +264,6 @@ private:
 
         //- Convert compass direction to standard mathematical convention
         scalar compassToStandard(scalar dir);
-
-        //- Convert standard mathematical convention to compass direction
-        scalar standardToCompass(scalar dir);
 
         //- Find which processor controls each actuator point
         void findControlProcNo();
