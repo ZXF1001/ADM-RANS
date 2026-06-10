@@ -273,6 +273,9 @@ horizontalAxisWindTurbinesADM_Simple::horizontalAxisWindTurbinesADM_Simple
     // -----------------------------------------------------------------------
     // Step 5b: Compute automatic parameters if not provided by user
     // -----------------------------------------------------------------------
+    // CRITICAL: In parallel runs, each processor has a different mesh partition.
+    // Auto-calculated epsilon/azimuthMaxDis/nRadial must be synchronized across
+    // all processors to ensure totDiskPointsArray is identical everywhere.
     for (int i = 0; i < numTurbines; i++)
     {
         int j = turbineTypeID[i];
@@ -281,12 +284,28 @@ horizontalAxisWindTurbinesADM_Simple::horizontalAxisWindTurbinesADM_Simple
         if (epsilon[i] < 0.0)
         {
             label cellID = mesh_.findNearestCell(rotorApex[i]);
+            scalar localMeshSize = GREAT;
+
             if (cellID != -1)
             {
-                scalar localMeshSize = Foam::cbrt(mesh_.V()[cellID]);
+                localMeshSize = Foam::cbrt(mesh_.V()[cellID]);
+            }
+
+            // In parallel: find the processor that owns the cell closest to rotorApex
+            // and use its mesh size. Use min to find the processor with valid data.
+            if (Pstream::parRun())
+            {
+                reduce(localMeshSize, minOp<scalar>());
+            }
+
+            if (localMeshSize < GREAT)
+            {
                 epsilon[i] = 2.5 * localMeshSize;
-                Info << "Turbine " << i << ": Auto epsilon = " << epsilon[i]
-                     << " m (2.5 × mesh size)" << endl;
+                if (Pstream::master())
+                {
+                    Info << "Turbine " << i << ": Auto epsilon = " << epsilon[i]
+                         << " m (2.5 × mesh size)" << endl;
+                }
             }
             else
             {
@@ -301,8 +320,11 @@ horizontalAxisWindTurbinesADM_Simple::horizontalAxisWindTurbinesADM_Simple
         if (azimuthMaxDis[i] < 0.0)
         {
             azimuthMaxDis[i] = epsilon[i];
-            Info << "Turbine " << i << ": Auto azimuthMaxDis = "
-                 << azimuthMaxDis[i] << " m" << endl;
+            if (Pstream::master())
+            {
+                Info << "Turbine " << i << ": Auto azimuthMaxDis = "
+                     << azimuthMaxDis[i] << " m" << endl;
+            }
         }
 
         // If nRadial not provided, ensure ~epsilon spacing
@@ -310,7 +332,10 @@ horizontalAxisWindTurbinesADM_Simple::horizontalAxisWindTurbinesADM_Simple
         {
             scalar bladeSpan = TipRad[j] - HubRad[j];
             nRadial[i] = max(10, label(bladeSpan / epsilon[i]));
-            Info << "Turbine " << i << ": Auto nRadial = " << nRadial[i] << endl;
+            if (Pstream::master())
+            {
+                Info << "Turbine " << i << ": Auto nRadial = " << nRadial[i] << endl;
+            }
         }
     }
 
@@ -567,13 +592,15 @@ void horizontalAxisWindTurbinesADM_Simple::update()
 void horizontalAxisWindTurbinesADM_Simple::findControlProcNo()
 {
     // Phase 1: Find local nearest cell and distance for each blade point
+    // Initialize all distances to GREAT (ensures consistent data across all processors)
     List<scalar> flatLocalDist(totDiskPointsArray, GREAT);
 
+    // Only fill distances for turbines controlled by this processor
     forAll(turbinesControlled, p)
     {
         int i = turbinesControlled[p];
 
-        // Calculate starting index for this turbine
+        // Calculate starting index for this turbine in the flat array
         int startIter = 0;
         for (int n = 0; n < i; n++)
         {
@@ -607,32 +634,32 @@ void horizontalAxisWindTurbinesADM_Simple::findControlProcNo()
         }
     }
 
-    // Phase 2: Communicate global minimum distance (use minOp, not maxOp)
+    // Phase 2: Communicate global minimum distance across all processors
+    // listCombineReduce ensures result is consistent on all ranks (no broadcast needed)
     List<scalar> flatGlobalDist = flatLocalDist;
     if (Pstream::parRun())
     {
-        Pstream::listCombineGather(flatGlobalDist, minEqOp<scalar>());
-        Pstream::broadcast(flatGlobalDist);
+        Pstream::listCombineReduce(flatGlobalDist, minEqOp<scalar>());
     }
     // flatGlobalDist[idx] now holds the global minimum distance for blade point idx
 
-    // Phase 3: Only the processor with the global minimum distance keeps valid minDisCellID
+    // Phase 3: Only the processor owning the global minimum distance keeps valid minDisCellID
     // Other processors clear to -1 to avoid duplicate velocity contributions in computeWindVectors
+    // CRITICAL: Must iterate over ALL turbines (not just turbinesControlled) to maintain
+    // consistent indexing into flatLocalDist/flatGlobalDist across all processors
+    int iter = 0;
+    for (int i = 0; i < numTurbines; i++)
     {
-        int iter = 0;
-        forAll(minDisCellID, i)
+        forAll(bladePoints[i], j)
         {
-            forAll(minDisCellID[i], j)
+            forAll(bladePoints[i][j], k)
             {
-                forAll(minDisCellID[i][j], k)
+                // If this processor's distance is NOT the global minimum, clear the cell ID
+                if (flatLocalDist[iter] > flatGlobalDist[iter] + SMALL)
                 {
-                    // If this processor's distance is NOT the global minimum, clear the cell ID
-                    if (flatLocalDist[iter] > flatGlobalDist[iter] + SMALL)
-                    {
-                        minDisCellID[i][j][k] = -1;
-                    }
-                    iter++;
+                    minDisCellID[i][j][k] = -1;
                 }
+                iter++;
             }
         }
     }
@@ -684,10 +711,10 @@ void horizontalAxisWindTurbinesADM_Simple::computeWindVectors()
     }
 
     // Combine across all processors (single collective call instead of per-element reduce)
+    // listCombineReduce ensures result is consistent on all ranks (no broadcast needed)
     if (Pstream::parRun())
     {
-        Pstream::listCombineGather(windVectorsLocal_, plusEqOp<vector>());
-        Pstream::broadcast(windVectorsLocal_);
+        Pstream::listCombineReduce(windVectorsLocal_, plusEqOp<vector>());
     }
 
     int iter = 0;
