@@ -14,8 +14,6 @@ namespace Foam
 namespace turbineModels
 {
 
-// * * * * * * * * * * * * * * * Constructor  * * * * * * * * * * * * * * * //
-
 horizontalAxisWindTurbinesADM_Simple::horizontalAxisWindTurbinesADM_Simple
 (
     const volVectorField& U
@@ -94,20 +92,23 @@ horizontalAxisWindTurbinesADM_Simple::horizontalAxisWindTurbinesADM_Simple
     lastOutputTime = runTime_.startTime().value();
     outputIndex = 0;
 
+    // Step 1a: Read basic parameters (defer nRadial/azimuthMaxDis/epsilon)
     forAll(turbineName, i)
     {
         const dictionary& turbDict = turbineArrayProperties.subDict(turbineName[i]);
 
         turbineType.append(turbDict.get<word>("turbineType"));
         baseLocation.append(turbDict.get<vector>("baseLocation"));
-        nRadial.append(turbDict.get<label>("nRadial"));
-        azimuthMaxDis.append(turbDict.get<scalar>("azimuthMaxDis"));
         pointDistType.append(turbDict.lookupOrDefault<word>("pointDistType", "uniform"));
         pointInterpType.append(turbDict.lookupOrDefault<word>("pointInterpType", "cellCenter"));
-        epsilon.append(turbDict.get<scalar>("epsilon"));
         inflowVelocityScalar.append(turbDict.lookupOrDefault<scalar>("inflowVelocityScalar", 1.0));
         nacYaw.append(turbDict.get<scalar>("NacYaw"));
         fluidDensity.append(turbDict.get<scalar>("fluidDensity"));
+
+        // Temporarily store user-provided values (or -1 if not provided)
+        nRadial.append(turbDict.lookupOrDefault<label>("nRadial", -1));
+        azimuthMaxDis.append(turbDict.lookupOrDefault<scalar>("azimuthMaxDis", -1.0));
+        epsilon.append(turbDict.lookupOrDefault<scalar>("epsilon", -1.0));
     }
 
     // -----------------------------------------------------------------------
@@ -268,6 +269,50 @@ horizontalAxisWindTurbinesADM_Simple::horizontalAxisWindTurbinesADM_Simple
     }
 
     // -----------------------------------------------------------------------
+    // Step 5b: Compute automatic parameters if not provided by user
+    // -----------------------------------------------------------------------
+    for (int i = 0; i < numTurbines; i++)
+    {
+        int j = turbineTypeID[i];
+
+        // If epsilon not provided, estimate from local mesh at rotor center
+        if (epsilon[i] < 0.0)
+        {
+            label cellID = mesh_.findNearestCell(rotorApex[i]);
+            if (cellID != -1)
+            {
+                scalar localMeshSize = Foam::cbrt(mesh_.V()[cellID]);
+                epsilon[i] = 2.5 * localMeshSize;
+                Info << "Turbine " << i << ": Auto epsilon = " << epsilon[i]
+                     << " m (2.5 × mesh size)" << endl;
+            }
+            else
+            {
+                FatalErrorInFunction
+                    << "Cannot find mesh cell at turbine " << i
+                    << " rotor apex " << rotorApex[i]
+                    << exit(FatalError);
+            }
+        }
+
+        // If azimuthMaxDis not provided, match epsilon
+        if (azimuthMaxDis[i] < 0.0)
+        {
+            azimuthMaxDis[i] = epsilon[i];
+            Info << "Turbine " << i << ": Auto azimuthMaxDis = "
+                 << azimuthMaxDis[i] << " m" << endl;
+        }
+
+        // If nRadial not provided, ensure ~epsilon spacing
+        if (nRadial[i] < 0)
+        {
+            scalar bladeSpan = TipRad[j] - HubRad[j];
+            nRadial[i] = max(10, label(bladeSpan / epsilon[i]));
+            Info << "Turbine " << i << ": Auto nRadial = " << nRadial[i] << endl;
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // Step 6: Define sphere of influence for each turbine
     // -----------------------------------------------------------------------
     for (int i = 0; i < numTurbines; i++)
@@ -411,8 +456,11 @@ horizontalAxisWindTurbinesADM_Simple::horizontalAxisWindTurbinesADM_Simple
     forAll(uvTower, i)
     {
         scalar yawAngle = nacYaw[i];
+        // 预计算 sin/cos：同一 yawAngle 将被所有执行器点复用，只计算一次
+        scalar cosYaw = Foam::cos(yawAngle);
+        scalar sinYaw = Foam::sin(yawAngle);
 
-        rotorApex[i] = rotatePoint(rotorApex[i], towerShaftIntersect[i], uvTower[i], yawAngle);
+        rotorApex[i] = rotatePointCached(rotorApex[i], towerShaftIntersect[i], uvTower[i], cosYaw, sinYaw);
 
         uvShaft[i] = rotorApex[i] - towerShaftIntersect[i];
         {
@@ -425,11 +473,12 @@ horizontalAxisWindTurbinesADM_Simple::horizontalAxisWindTurbinesADM_Simple
         {
             forAll(bladePoints[i][j], k)
             {
-                bladePoints[i][j][k] = rotatePoint(
+                bladePoints[i][j][k] = rotatePointCached(
                     bladePoints[i][j][k],
                     towerShaftIntersect[i],
                     uvTower[i],
-                    yawAngle
+                    cosYaw,
+                    sinYaw
                 );
             }
         }
@@ -442,6 +491,20 @@ horizontalAxisWindTurbinesADM_Simple::horizontalAxisWindTurbinesADM_Simple
 
     // 预分配 windVectorsLocal_ 内存（避免每个时间步重新分配）
     windVectorsLocal_.setSize(totDiskPointsArray, vector::zero);
+
+    // 预计算 Gaussian 核常量和插值类型标志（避免每个时间步重新计算）
+    cachedEps3Pi15_.setSize(numTurbines);
+    cachedInvEps2_.setSize(numTurbines);
+    cachedProjRadSq_.setSize(numTurbines);
+    useLinearInterp_.setSize(numTurbines);
+    for (int i = 0; i < numTurbines; i++)
+    {
+        cachedEps3Pi15_[i] = Foam::pow(epsilon[i], 3)
+                           * Foam::pow(Foam::constant::mathematical::pi, 1.5);
+        cachedInvEps2_[i]  = 1.0 / Foam::sqr(epsilon[i]);
+        cachedProjRadSq_[i] = Foam::sqr(projectionRadius[i]);
+        useLinearInterp_[i] = (pointInterpType[i] == "linear");
+    }
 
     computeWindVectors();
     computeAverageInflow();
@@ -584,7 +647,12 @@ void horizontalAxisWindTurbinesADM_Simple::computeWindVectors()
     // 使用预分配的成员变量，清零而非重新分配
     windVectorsLocal_ = vector::zero;
 
-    if (pointInterpType[0] == "linear")
+    bool anyLinearInterp = false;
+    forAll(useLinearInterp_, ii)
+    {
+        if (useLinearInterp_[ii]) { anyLinearInterp = true; break; }
+    }
+    if (anyLinearInterp)
     {
         gradU = fvc::grad(U_);
     }
@@ -606,7 +674,7 @@ void horizontalAxisWindTurbinesADM_Simple::computeWindVectors()
                 {
                     windVectorsLocal_[iter] = U_[minDisCellID[i][j][k]];
 
-                    if (pointInterpType[i] == "linear")
+                    if (useLinearInterp_[i])
                     {
                         vector dx = bladePoints[i][j][k]
                                   - mesh_.C()[minDisCellID[i][j][k]];
@@ -737,16 +805,14 @@ void horizontalAxisWindTurbinesADM_Simple::computeBladeForce()
             }
         }
 
-        // Induction factor and Cp for diagnostic output
+        // Induction factor for diagnostic output
         scalar a_final = 0.5 * (1.0 - Foam::sqrt(1.0 - Ct));
-        scalar Cp = powerRotor[i] / (0.5 * A * Foam::pow(V_inf, 3));
 
         Info << "Turbine " << i
              << ": V_disk = " << V_disk << " m/s"
              << "  V_inf = "  << V_inf  << " m/s"
              << "  a = "      << a_final
              << "  Ct = "     << Ct
-             << "  Cp = "     << Cp
              << "  Thrust = " << thrust[i] * fluidDensity[i] << " N"
              << "  Power = "  << powerRotor[i] * fluidDensity[i] / 1e6 << " MW"
              << endl;
@@ -765,40 +831,46 @@ void horizontalAxisWindTurbinesADM_Simple::computeBodyForce()
     {
         if (sphereCells[i].size() > 0)
         {
-            // 预计算常量：对涡轮机 i 是常量，移到外层循环避免重复计算
-            const scalar eps3_pi15 = Foam::pow(epsilon[i], 3)
-                                     * Foam::pow(Foam::constant::mathematical::pi, 1.5);
-            const scalar invEps2   = 1.0 / Foam::sqr(epsilon[i]);
+            const scalar invEps2    = cachedInvEps2_[i];
+            const scalar eps3_pi15  = cachedEps3Pi15_[i];
+            const scalar projRadSq  = cachedProjRadSq_[i];
 
-            forAll(bladeForce[i], j)
+            // 交换循环顺序：以球内单元为外层，执行器点为内层
+            // 优势：每个网格单元坐标只读取一次（原来是读 N_bladePoints 次），
+            //       bodyForce[cell] 只写入一次（原来是读-改-写 N_bladePoints 次）
+            forAll(sphereCells[i], m)
             {
-                forAll(bladeForce[i][j], k)
-                {
-                    forAll(sphereCells[i], m)
-                    {
-                        scalar dis = mag(
-                            mesh_.C()[sphereCells[i][m]] - bladePoints[i][j][k]
-                        );
+                const label  cellID = sphereCells[i][m];
+                const vector cellC  = mesh_.C()[cellID];
+                const scalar cellV  = mesh_.V()[cellID];
 
-                        if (dis <= projectionRadius[i])
+                vector sumForce(vector::zero);
+                scalar sumThrust(0.0);
+
+                forAll(bladeForce[i], j)
+                {
+                    forAll(bladeForce[i][j], k)
+                    {
+                        scalar disSq = magSqr(cellC - bladePoints[i][j][k]);
+
+                        if (disSq <= projRadSq)
                         {
                             scalar gaussKernel =
-                                Foam::exp(-Foam::sqr(dis) * invEps2) / eps3_pi15;
+                                Foam::exp(-disSq * invEps2) / eps3_pi15;
 
-                            bodyForce[sphereCells[i][m]] +=
+                            vector contrib =
                                 bladeForce[i][j][k]
                                 * solidity[i][j]
                                 * gaussKernel;
 
-                            thrustBodyForceSum +=
-                                (-bladeForce[i][j][k]
-                                 * solidity[i][j]
-                                 * gaussKernel
-                                 * mesh_.V()[sphereCells[i][m]])
-                                & uvShaft[i];
+                            sumForce  += contrib;
+                            sumThrust += (-contrib * cellV) & uvShaft[i];
                         }
                     }
                 }
+
+                bodyForce[cellID]   += sumForce;
+                thrustBodyForceSum  += sumThrust;
             }
         }
         thrustSum += thrust[i];
@@ -834,6 +906,33 @@ vector horizontalAxisWindTurbinesADM_Simple::rotatePoint
     RM.zx() = axis.x()*axis.z()*(1.0 - Foam::cos(angle)) - axis.y()*Foam::sin(angle);
     RM.zy() = axis.y()*axis.z()*(1.0 - Foam::cos(angle)) + axis.x()*Foam::sin(angle);
     RM.zz() = Foam::sqr(axis.z()) + (1.0 - Foam::sqr(axis.z())) * Foam::cos(angle);
+
+    point = point - rotationPoint;
+    point = RM & point;
+    point = point + rotationPoint;
+    return point;
+}
+
+
+vector horizontalAxisWindTurbinesADM_Simple::rotatePointCached
+(
+    vector point,
+    vector rotationPoint,
+    vector axis,
+    scalar cosAngle,
+    scalar sinAngle
+)
+{
+    tensor RM;
+    RM.xx() = Foam::sqr(axis.x()) + (1.0 - Foam::sqr(axis.x())) * cosAngle;
+    RM.xy() = axis.x()*axis.y()*(1.0 - cosAngle) - axis.z()*sinAngle;
+    RM.xz() = axis.x()*axis.z()*(1.0 - cosAngle) + axis.y()*sinAngle;
+    RM.yx() = axis.x()*axis.y()*(1.0 - cosAngle) + axis.z()*sinAngle;
+    RM.yy() = Foam::sqr(axis.y()) + (1.0 - Foam::sqr(axis.y())) * cosAngle;
+    RM.yz() = axis.y()*axis.z()*(1.0 - cosAngle) - axis.x()*sinAngle;
+    RM.zx() = axis.x()*axis.z()*(1.0 - cosAngle) - axis.y()*sinAngle;
+    RM.zy() = axis.y()*axis.z()*(1.0 - cosAngle) + axis.x()*sinAngle;
+    RM.zz() = Foam::sqr(axis.z()) + (1.0 - Foam::sqr(axis.z())) * cosAngle;
 
     point = point - rotationPoint;
     point = RM & point;

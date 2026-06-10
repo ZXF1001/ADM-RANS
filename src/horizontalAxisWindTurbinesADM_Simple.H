@@ -100,6 +100,9 @@ private:
             //- Point interpolation type ("cellCenter" or "linear")
             DynamicList<word> pointInterpType;
 
+            //- Cached boolean for linear interpolation (computed once in constructor)
+            DynamicList<bool> useLinearInterp_;
+
             //- Gaussian kernel width (m)
             DynamicList<scalar> epsilon;
 
@@ -108,6 +111,11 @@ private:
 
             //- Projection radius (m)
             DynamicList<scalar> projectionRadius;
+
+            //- Cached Gaussian kernel constants (computed once in constructor)
+            DynamicList<scalar> cachedEps3Pi15_;      // pow(epsilon, 3) * pow(pi, 1.5)
+            DynamicList<scalar> cachedInvEps2_;       // 1 / sqr(epsilon)
+            DynamicList<scalar> cachedProjRadSq_;     // sqr(projectionRadius)
 
             //- Rotation direction ("cw" or "ccw") — unused in ADM, removed
 
@@ -240,6 +248,13 @@ private:
 
         //- Rotate a point about an axis
         vector rotatePoint(vector point, vector rotationPoint, vector axis, scalar angle);
+
+        //- Rotate a point using precomputed cos/sin (avoids repeated trig calls)
+        vector rotatePointCached
+        (
+            vector point, vector rotationPoint, vector axis,
+            scalar cosAngle, scalar sinAngle
+        );
 
         //- Linear interpolation
         scalar interpolate(scalar xNew, List<scalar>& xOld, List<scalar>& yOld);
