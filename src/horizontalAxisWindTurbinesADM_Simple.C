@@ -262,10 +262,12 @@ horizontalAxisWindTurbinesADM_Simple::horizontalAxisWindTurbinesADM_Simple
         towerShaftIntersect.append(baseLocation[i]);
         towerShaftIntersect[i].z() += TowerHt[j] + Twr2Shft[j];
 
-        // Rotor apex (accounting for overhang and shaft tilt)
+        // Rotor apex (accounting for overhang and shaft tilt, without nacYaw)
+        // nacYaw rotation will be applied later in Step 8
         rotorApex.append(towerShaftIntersect[i]);
-        rotorApex[i].x() += (OverHang[j] + UndSling[j]) * Foam::cos(ShftTilt[j]);
-        rotorApex[i].z() += (OverHang[j] + UndSling[j]) * Foam::sin(ShftTilt[j]);
+        scalar overhangTotal = OverHang[j] + UndSling[j];
+        rotorApex[i].x() += overhangTotal * Foam::cos(ShftTilt[j]);
+        rotorApex[i].z() += overhangTotal * Foam::sin(ShftTilt[j]);
     }
 
     // -----------------------------------------------------------------------
@@ -354,12 +356,12 @@ horizontalAxisWindTurbinesADM_Simple::horizontalAxisWindTurbinesADM_Simple
         totDiskPoints.append(0);
         int j = turbineTypeID[i];
 
-        // Shaft direction: positive if OverHang > 0 (downwind)
-        scalar shaftDir = (OverHang[j] > 0) ? 1.0 : -1.0;
-
-        // Unit vector along shaft
-        uvShaft.append(rotorApex[i] - towerShaftIntersect[i]);
-        uvShaft[i] = (uvShaft[i] / mag(uvShaft[i])) * shaftDir;
+        // Unit vector along shaft (directly from nacYaw and ShftTilt)
+        vector uvShaft_temp;
+        uvShaft_temp.x() = Foam::cos(nacYaw[i]) * Foam::cos(ShftTilt[j]);
+        uvShaft_temp.y() = Foam::sin(nacYaw[i]) * Foam::cos(ShftTilt[j]);
+        uvShaft_temp.z() = Foam::sin(ShftTilt[j]);
+        uvShaft.append(uvShaft_temp);
 
         // Unit vector along tower
         uvTower.append(towerShaftIntersect[i] - baseLocation[i]);
@@ -455,19 +457,12 @@ horizontalAxisWindTurbinesADM_Simple::horizontalAxisWindTurbinesADM_Simple
     // -----------------------------------------------------------------------
     forAll(uvTower, i)
     {
-        scalar yawAngle = nacYaw[i];
-        // 预计算 sin/cos：同一 yawAngle 将被所有执行器点复用，只计算一次
-        scalar cosYaw = Foam::cos(yawAngle);
-        scalar sinYaw = Foam::sin(yawAngle);
+        scalar cosYaw = Foam::cos(nacYaw[i]);
+        scalar sinYaw = Foam::sin(nacYaw[i]);
 
         rotorApex[i] = rotatePointCached(rotorApex[i], towerShaftIntersect[i], uvTower[i], cosYaw, sinYaw);
 
-        uvShaft[i] = rotorApex[i] - towerShaftIntersect[i];
-        {
-            int j = turbineTypeID[i];
-            scalar shaftDir = (OverHang[j] > 0) ? 1.0 : -1.0;
-            uvShaft[i] = (uvShaft[i] / mag(uvShaft[i])) * shaftDir;
-        }
+        // uvShaft is already set from nacYaw/ShftTilt angles in Step 7 — no recalculation needed
 
         forAll(bladePoints[i], j)
         {

@@ -19,9 +19,9 @@ FoamFile
 TipRad          63.0;       // Rotor tip radius [m]
 HubRad          1.5;        // Hub radius [m]
 TowerHt         90.0;       // Tower height [m]
-Twr2Shft        2.4;        // Tower top to shaft centerline [m]
-OverHang        5.0;        // Overhang distance [m]
-UndSling        0.0;        // Undersling [m]
+Twr2Shft        0;        // Tower top to shaft centerline [m]
+OverHang        0;        // Overhang distance [m]
+UndSling        0;        // Undersling [m]
 ShftTilt        0;          // Shaft tilt angle [deg]
 
 // Power/Ct performance curves (industry-standard format)
