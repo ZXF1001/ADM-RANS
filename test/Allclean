@@ -3,3 +3,4 @@ rm -rf constant/polyMesh
 rm -rf processor*
 rm -rf postProcessing
 rm -rf dynamicCode
+rm -rf turbineOutput

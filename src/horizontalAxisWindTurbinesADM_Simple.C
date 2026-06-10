@@ -504,9 +504,20 @@ void horizontalAxisWindTurbinesADM_Simple::update()
 
 void horizontalAxisWindTurbinesADM_Simple::findControlProcNo()
 {
+    // Phase 1: Find local nearest cell and distance for each blade point
+    List<scalar> flatLocalDist(totDiskPointsArray, GREAT);
+
     forAll(turbinesControlled, p)
     {
         int i = turbinesControlled[p];
+
+        // Calculate starting index for this turbine
+        int startIter = 0;
+        for (int n = 0; n < i; n++)
+        {
+            startIter += totDiskPoints[n];
+        }
+        int iter = startIter;
 
         forAll(bladePoints[i], j)
         {
@@ -528,38 +539,25 @@ void horizontalAxisWindTurbinesADM_Simple::findControlProcNo()
                     }
                 }
                 minDisCellID[i][j][k] = minCell;
+                flatLocalDist[iter] = minDis;
+                iter++;
             }
         }
     }
 
-    // Gather/scatter so all processors know all cell IDs
-    // Build flat list for communication
-    List<label> flatLocal(totDiskPointsArray, -1);
-    {
-        int iter = 0;
-        forAll(minDisCellID, i)
-        {
-            forAll(minDisCellID[i], j)
-            {
-                forAll(minDisCellID[i][j], k)
-                {
-                    flatLocal[iter] = minDisCellID[i][j][k];
-                    iter++;
-                }
-            }
-        }
-    }
-
-    // Combine across all processors (take max to get the valid cell ID)
+    // Phase 2: Communicate global minimum distance (use minOp, not maxOp)
+    List<scalar> flatGlobalDist = flatLocalDist;
     if (Pstream::parRun())
     {
-        forAll(flatLocal, idx)
+        forAll(flatGlobalDist, idx)
         {
-            reduce(flatLocal[idx], maxOp<label>());
+            reduce(flatGlobalDist[idx], minOp<scalar>());
         }
     }
+    // flatGlobalDist[idx] now holds the global minimum distance for blade point idx
 
-    // Unpack
+    // Phase 3: Only the processor with the global minimum distance keeps valid minDisCellID
+    // Other processors clear to -1 to avoid duplicate velocity contributions in computeWindVectors
     {
         int iter = 0;
         forAll(minDisCellID, i)
@@ -568,7 +566,11 @@ void horizontalAxisWindTurbinesADM_Simple::findControlProcNo()
             {
                 forAll(minDisCellID[i][j], k)
                 {
-                    minDisCellID[i][j][k] = flatLocal[iter];
+                    // If this processor's distance is NOT the global minimum, clear the cell ID
+                    if (flatLocalDist[iter] > flatGlobalDist[iter] + SMALL)
+                    {
+                        minDisCellID[i][j][k] = -1;
+                    }
                     iter++;
                 }
             }

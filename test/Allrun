@@ -1,6 +1,6 @@
 cp -r 0.orig 0
 blockMesh
 decomposePar
-mpirun -np 8 potentialFoam -parallel
+# mpirun -np 8 potentialFoam -parallel  # 注释掉potentialFoam，使用纯均匀初始场
 mpirun -np 8 simpleFoamADM -parallel
 reconstructPar
