@@ -1,6 +1,0 @@
-cp -r 0.orig 0
-cartesianMesh
-decomposePar
-mpirun -np 8 potentialFoam -parallel
-mpirun -np 8 simpleFoamADM -parallel
-reconstructPar

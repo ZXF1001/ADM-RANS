@@ -781,11 +781,22 @@ void horizontalAxisWindTurbinesADM_Simple::computeBladeForce()
 
         for (int iter = 0; iter < maxIter; iter++)
         {
-            // Ct must be in [0, 0.99]: Ct >= 1 makes sqrt(1-Ct) imaginary
+            // Buhl (2005) correction allows CT > 1 for high-thrust regimes
             scalar Ct_k = interpolate(V_inf, windSpeedTable[n], CtTable[n]);
-            Ct_k = max(0.0, min(Ct_k, 0.99));
+            Ct_k = max(0.0, Ct_k);  // Only prevent negative values
 
-            scalar a_k = 0.5 * (1.0 - Foam::sqrt(1.0 - Ct_k));
+            scalar a_k;
+            if (Ct_k <= 0.96)
+            {
+                // Classical momentum theory (valid for CT <= 0.96)
+                a_k = 0.5 * (1.0 - Foam::sqrt(1.0 - Ct_k));
+            }
+            else
+            {
+                // Buhl (2005) high-thrust correction for CT > 0.96
+                // Derived from CT = 8/9 + (4F-40/9)*a + (50/9-4F)*a^2 with F=1 (actuator disk)
+                a_k = (2.0 + 3.0 * Foam::sqrt(14.0*Ct_k - 12.0)) / 14.0;
+            }
 
             // Raw update from momentum theory
             scalar V_inf_raw = V_disk / max(1.0 - a_k, 0.01);
@@ -807,7 +818,7 @@ void horizontalAxisWindTurbinesADM_Simple::computeBladeForce()
         // Final lookup at converged V_inf
         scalar Ct    = interpolate(V_inf, windSpeedTable[n], CtTable[n]);
         scalar Power = interpolate(V_inf, windSpeedTable[n], PowerTable[n]);
-        Ct = max(0.0, min(Ct, 0.99));
+        Ct = max(0.0, Ct);  // Only prevent negative values; Buhl (2005) handles CT > 1
 
         // Rotor swept area
         scalar A = Foam::constant::mathematical::pi * Foam::sqr(TipRad[n]);
@@ -833,8 +844,16 @@ void horizontalAxisWindTurbinesADM_Simple::computeBladeForce()
             }
         }
 
-        // Induction factor for diagnostic output
-        scalar a_final = 0.5 * (1.0 - Foam::sqrt(1.0 - Ct));
+        // Induction factor for diagnostic output (Buhl 2005 correction)
+        scalar a_final;
+        if (Ct <= 0.96)
+        {
+            a_final = 0.5 * (1.0 - Foam::sqrt(1.0 - Ct));
+        }
+        else
+        {
+            a_final = (2.0 + 3.0 * Foam::sqrt(14.0*Ct - 12.0)) / 14.0;
+        }
 
         Info << "Turbine " << i
              << ": V_disk = " << V_disk << " m/s"
